@@ -9,6 +9,7 @@ import Data.Time (TimeOfDay(..), LocalTime(..), Day(..))
 import Database.Persist.Sql
 import Data.Aeson
 import Control.Monad
+import Control.Applicative
 
 data WeekDay = Monday
              | Tuesday

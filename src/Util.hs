@@ -8,6 +8,7 @@ import Config
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Reader
+import Control.Applicative
 
 import Network.HTTP.Types.Status
 import Network.Wai
