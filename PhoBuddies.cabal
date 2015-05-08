@@ -19,7 +19,7 @@ executable PhoBuddies
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.7 && <4.9,
                        containers,
                        uuid,
                        aeson >=0.7 && <0.9,
