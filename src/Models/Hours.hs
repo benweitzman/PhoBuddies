@@ -25,13 +25,27 @@ instance FromJSON WeekDay where
   parseJSON (String t) = pure . read $ unpack t
   parseJSON _ = mzero
 
-data Hours = Hours (M.Map WeekDay (TimeOfDay, TimeOfDay)) deriving (Show, Read, Eq)
+data OpenHours = OpenHours TimeOfDay TimeOfDay deriving (Show, Read, Eq)
+
+data Hours = Hours (M.Map WeekDay OpenHours) deriving (Show, Read, Eq)
+
+instance ToJSON OpenHours where
+  toJSON (OpenHours open close) = object [ "open" .= open 
+                                         , "close" .= close
+                                         ]
+
+instance FromJSON OpenHours where
+  parseJSON (Object v) = OpenHours <$>
+                         v .: "open" <*>
+                         v .: "close"
+  parseJSON _ = mzero                      
+
 
 instance ToJSON TimeOfDay where
     toJSON (TimeOfDay hour min sec) = object [ "hour" .= hour
-                                           , "minute" .= min
-                                           , "second" .= sec
-                                           ]
+                                             , "minute" .= min
+                                             , "second" .= sec
+                                             ]
 
 instance FromJSON TimeOfDay where
   parseJSON (Object v) = TimeOfDay <$>
@@ -53,10 +67,10 @@ instance FromJSON LocalTime where
 
 
 instance ToJSON Hours where
-  toJSON (Hours m) = toJSON $ M.toList m
+  toJSON (Hours m) = toJSON $ M.mapKeys show m
 
 instance FromJSON Hours where
-    parseJSON a = Hours . M.fromList <$> parseJSON a
+    parseJSON a = Hours . M.mapKeys read <$> parseJSON a
 
 instance PersistField Hours where
   toPersistValue = PersistText . pack . show

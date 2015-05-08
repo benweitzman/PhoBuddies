@@ -5,15 +5,24 @@ module Actions.Types where
 import Models
 import Util hiding (decode)
 
+import qualified Database.Persist as DB
+
 import Control.Monad
+import Control.Applicative
 
 import Data.Text
+import Data.Text.Lazy.Read
+import qualified Data.Text.Lazy as LT
 import Data.Aeson
 import Data.Aeson.Types
 import Data.Time.Clock (UTCTime)
 import Data.Time
 import Data.Text.Encoding
 import qualified Data.Map as M
+import Data.Monoid
+
+class FromParams a where
+  fromParams :: M.Map LT.Text LT.Text -> Maybe a
 
 data RegistrationRequest = RegistrationRequest
   { email :: Text
@@ -43,19 +52,70 @@ data LoginRequest = LoginRequest
   }
 
 instance FromJSON LoginRequest where
-    parseJSON (Object v) = LoginRequest <$> v .: "email" <*> v .: "password"
+    parseJSON (Object v) = LoginRequest <$> 
+                           v .: "email" <*> 
+                           v .: "password"
     parseJSON _ = mzero
+
+data LoginResponse = LoginResponse 
+  { token :: Text 
+  } deriving (Show, Eq)
+
+instance ToJSON LoginResponse where
+  toJSON (LoginResponse token) = object [ "token" .= token ]
 
 data CreateInvitationRequest = CreateInvitationRequest
   { restaurantId :: RestaurantId
   , time :: LocalTime
-  }
+  } deriving (Show, Eq)
 
 instance FromJSON CreateInvitationRequest where
-  parseJSON (Object v) = CreateInvitationRequest <$> v .: "restaurantId" <*> v .: "time"
+  parseJSON (Object v) = CreateInvitationRequest <$> 
+                         v .: "restaurantId" <*> 
+                         v .: "time"
   parseJSON _ = mzero
 
-data AuthorizationToken = AuthorizationToken { userId :: UserId }
+data CreateInvitationResponse = CreateInvitationResponse
+  { invitationId :: InvitationId
+  } deriving (Show, Eq)
+
+instance ToJSON CreateInvitationResponse where
+  toJSON (CreateInvitationResponse inviteId) = object [ "invitationId" .= inviteId ]
+
+data GetInvitationsRequest = GetInvitationsRequest
+  { offset :: Maybe Int
+  } deriving (Show, Eq)
+
+instance FromParams GetInvitationsRequest where
+  fromParams paramMap = GetInvitationsRequest <$>
+                          case M.lookup "offset" paramMap of
+                            Nothing -> pure Nothing
+
+                            Just text -> Just <$> textToInt text
+
+    where textToInt t = let eitherPair = decimal t
+                            maybePair = eitherToMaybe eitherPair
+                            i = fst <$> maybePair
+                        in i
+
+newtype InvitationWithId = InvitationWithId (DB.Entity Invitation)
+
+instance ToJSON InvitationWithId where
+  toJSON (InvitationWithId (DB.Entity key record)) = object ["id" .= key, "invitation" .= record]
+
+data GetInvitationsResponse = GetInvitationsResponse
+  { invitations :: [InvitationWithId]
+  , nextOffset :: Maybe Int
+  } 
+
+instance ToJSON GetInvitationsResponse where
+  toJSON (GetInvitationsResponse invitations offset) = object ["invitations" .= invitations, "nextOffset" .= offset]
+
+
+
+data AuthorizationToken = AuthorizationToken 
+  { userId :: UserId 
+  } deriving (Show, Eq)
 
 instance Claimable AuthorizationToken where
   toMap (AuthorizationToken userId) = M.fromList [("userId", toJSON userId)]

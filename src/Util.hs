@@ -30,10 +30,14 @@ verifyPassword :: Text -> Text -> Bool
 verifyPassword hash password = validatePassword (encodeUtf8 hash) (encodeUtf8 password)
 
 
-
+{-
 unlessSucceed :: (Monad m, ScottyError e) => Status -> ActionT e m () -> ActionT e m ()
 unlessSucceed st block = catchError block (\_ -> status st)
+-}
 
+eitherToMaybe :: Either a b -> Maybe b
+eitherToMaybe (Left _) = Nothing
+eitherToMaybe (Right val) = Just val
 
 
 
@@ -62,16 +66,16 @@ requestHeader headerName = do
     let headerNameCI = mk $ encodeUtf8 headerName
     return $ decodeUtf8 <$> Prelude.lookup headerNameCI headers
 
-withAuthorization :: Claimable a => (a -> Action ()) -> Action ()
+withAuthorization :: Claimable a => (a -> Action b) -> Action b
 withAuthorization with = do 
     mAuthTokenText <- requestHeader "Authorization"
     case mAuthTokenText of 
-        Nothing -> status unauthorized401 
+        Nothing -> raise $ Failure unauthorized401 "Authorization required"
 
         Just authTokenText -> do
             mAuthToken <- decodeToken authTokenText
             case mAuthToken of
-                Nothing -> status unauthorized401
+                Nothing -> raise $ Failure unauthorized401 "Invalid authorization"
 
                 Just authToken -> with authToken
 

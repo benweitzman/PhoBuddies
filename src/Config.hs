@@ -28,6 +28,7 @@ import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Except
 
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text.Lazy (Text)
 import Data.Aeson (Value (Null), (.=), object)
@@ -51,9 +52,16 @@ newtype ConfigM a = ConfigM { runConfigM :: ReaderT Config IO a }
     deriving (Applicative, Functor, Monad, MonadIO, MonadReader Config)
 
 
-type Error = Text
+data Failure = Failure Status Text deriving (Show)
 
-type Action a = ActionT Error ConfigM a
+unknownFailure :: Failure
+unknownFailure = Failure internalServerError500 "Unable to handle request"
+
+instance ScottyError Failure where
+    stringError = Failure internalServerError500 . TL.pack
+    showError (Failure _ t) = t
+
+type Action a = ActionT Failure ConfigM a
 
 getConfig :: IO Config
 getConfig = do
@@ -111,7 +119,7 @@ getConnectionSize Development = 1
 getConnectionSize Production = 8
 getConnectionSize Test = 1
 
-run :: ScottyT Error ConfigM () -> Config -> IO ()
+run :: ScottyT Failure ConfigM () -> Config -> IO ()
 run application c = do
   o <- getOptions (environment c)
   let r m = runReaderT (runConfigM m) c

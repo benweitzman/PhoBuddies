@@ -23,22 +23,22 @@ main = do
    c <- getConfig
    run application c
 
-application :: ScottyT Error ConfigM ()
+application :: ScottyT Failure ConfigM ()
 application = do
   runDB (DB.runMigration migrateAll)
   e <- lift (asks environment)
   middleware (loggingM e)
   post "/user" registerA
-  get "/authorizationToken" loginA
-  post "/invitation" createInviteA
+  get "/authorizationToken" $ void loginA
+  post "/invitation" $ void createInviteA
+  get "/invitation" $ void getInvitesA
   defaultHandler (defaultH e)
 
-defaultH :: Environment -> Error -> Action ()
-defaultH e x = do
-  status internalServerError500
+defaultH :: Environment -> Failure -> Action ()
+defaultH e (Failure stat message) = do
+  status  stat
   let o = case e of
-        Development -> object ["error" .= showError x]
+        Development -> object ["error" .= message]
         Production -> Null
-        Test -> object ["error" .= showError x]
+        Test -> object ["error" .= message]
   json o
-
