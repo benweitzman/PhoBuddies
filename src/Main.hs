@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
@@ -11,7 +10,6 @@ import Actions
 
 import qualified Database.Persist as DB
 import qualified Database.Persist.Postgresql as DB
-import Network.HTTP.Types.Status
 import Web.Scotty.Trans
 import Data.Aeson (Value (Null), (.=), object)
 
@@ -27,12 +25,12 @@ application :: ScottyT Failure ConfigM ()
 application = do
   runDB (DB.runMigration migrateAll)
   e <- lift (asks environment)
-  middleware (loggingM e)
-  post "/user" registerA
-  get "/authorizationToken" $ void loginA
-  post "/invitation" $ void createInviteA
-  get "/invitation" $ void getInvitesA
-  defaultHandler (defaultH e)
+  middleware $ loggingM e
+  post "/user" $ withJSON registerA
+  get "/authorizationToken" . void $ withParams loginA
+  post "/invitation" . void . withJSON $ withAuthorization  createInviteA
+  get "/invitation" . void $ withParams getInvitesA
+  defaultHandler $ defaultH e
 
 defaultH :: Environment -> Failure -> Action ()
 defaultH e (Failure stat message) = do

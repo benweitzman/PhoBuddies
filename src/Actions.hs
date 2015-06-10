@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Actions where
@@ -20,36 +19,53 @@ import Control.Monad.Trans
 import Control.Monad.Except
 
 import Data.Time
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT 
 import Data.Aeson ((.=), object, FromJSON, ToJSON)
 import Data.Maybe
 import qualified Data.Map as M
 
-type API request response = Action response
+type API request response = request -> Action (Status, response)
 
-api :: (ToJSON response) => Action (Status, response) -> API request response
+type Authorized auth request response = auth -> API request response
+
+api :: (ToJSON response) => Action (Status, response) -> Action response
 api with = do 
   (stat, resp) <- with
   json resp
   status stat
   return resp
 
-withJSON :: (FromJSON request) => (request -> Action response) -> API request response
+withJSON :: (FromJSON request, ToJSON response) => API request response -> Action response
 withJSON with = do
     req <- jsonData
-    with req
+    api $ with req
 
-withParams :: (FromParams request) => (request -> Action response) -> API request response
+withParams :: (FromParams request, ToJSON response) => API request response -> Action response
 withParams with = do 
-  ps <- params
-  case fromParams (M.fromList ps) of
+  paramAssoc <- M.fromList <$> params
+  let ps = M.mapKeys LT.toStrict $ LT.toStrict <$> paramAssoc
+  case fromParams ps of
     Nothing -> raise $ Failure badRequest400 "Expected request in params"
 
-    Just req -> with req
+    Just req -> api $ with req
+
+withAuthorization :: Claimable a => Authorized a request response -> API request response
+withAuthorization with req = do 
+    mAuthTokenText <- requestHeader "Authorization"
+    case mAuthTokenText of 
+        Nothing -> raise $ Failure unauthorized401 "Authorization required"
+
+        Just authTokenText -> do
+            mAuthToken <- decodeToken authTokenText
+            case mAuthToken of
+                Nothing -> raise $ Failure unauthorized401 "Invalid authorization"
+
+                Just authToken -> with authToken req
 
 
 registerA :: API RegistrationRequest ()
-registerA = api $ 
-            withJSON $ \request -> do
+registerA request = do
   mHashedPassword <- liftIO . hashPassword $ password request
   case mHashedPassword of
     Nothing -> 
@@ -68,8 +84,7 @@ registerA = api $
 
 
 loginA :: API LoginRequest LoginResponse
-loginA = api $ 
-         withJSON $ \(LoginRequest loginEmail loginPassword) -> do
+loginA (LoginRequest loginEmail loginPassword) = do
   mUser <- runDB . DB.getBy $ UniqueEmail loginEmail
   case mUser of 
     Nothing ->
@@ -86,21 +101,18 @@ loginA = api $
       else
         raise $ Failure unauthorized401 "Bad password"
 
-createInviteA :: API CreateInvitationRequest CreateInvitationResponse
-createInviteA = api $ 
-                withJSON $ \(CreateInvitationRequest restaurantId time) ->
-                withAuthorization $ \(AuthorizationToken authUserId) -> do 
-  mInvitationId <- runDB (DB.insertUnique (Invitation authUserId restaurantId time DB.Active Nothing))
-  case mInvitationId of 
-    Nothing -> 
-      raise $ Failure conflict409 "One invitation exists"
+createInviteA :: Authorized AuthorizationToken CreateInvitationRequest CreateInvitationResponse
+createInviteA (AuthorizationToken authUserId) (CreateInvitationRequest restaurantId time) = do 
+    mInvitationId <- runDB (DB.insertUnique (Invitation authUserId restaurantId time DB.Active Nothing))
+    case mInvitationId of 
+      Nothing -> 
+        raise $ Failure conflict409 "One invitation exists"
 
-    Just invitationId ->
-      return (created201, CreateInvitationResponse invitationId)    
+      Just invitationId ->
+        return (created201, CreateInvitationResponse invitationId)    
 
 getInvitesA :: API GetInvitationsRequest GetInvitationsResponse
-getInvitesA = api $
-              withParams $ \(GetInvitationsRequest offset) -> do
+getInvitesA (GetInvitationsRequest offset) = do
   invitations <- runDB (DB.selectList filter [DB.OffsetBy (fromMaybe 0 offset)
                                              ,DB.LimitTo limit
                                              ])

@@ -11,7 +11,7 @@ import Control.Monad
 import Control.Applicative
 
 import Data.Text
-import Data.Text.Lazy.Read
+import Data.Text.Read
 import qualified Data.Text.Lazy as LT
 import Data.Aeson
 import Data.Aeson.Types
@@ -22,7 +22,7 @@ import qualified Data.Map as M
 import Data.Monoid
 
 class FromParams a where
-  fromParams :: M.Map LT.Text LT.Text -> Maybe a
+  fromParams :: M.Map Text Text -> Maybe a
 
 data RegistrationRequest = RegistrationRequest
   { email :: Text
@@ -46,16 +46,18 @@ instance FromJSON RegistrationRequest where
   parseJSON _ = mzero                         
 
 
+
 data LoginRequest = LoginRequest
   { loginEmail :: Text
   , loginPassword :: Text
   }
 
-instance FromJSON LoginRequest where
-    parseJSON (Object v) = LoginRequest <$> 
-                           v .: "email" <*> 
-                           v .: "password"
-    parseJSON _ = mzero
+instance FromParams LoginRequest where
+    fromParams m = LoginRequest <$> 
+                   M.lookup "email" m <*> 
+                   M.lookup "password" m
+
+
 
 data LoginResponse = LoginResponse 
   { token :: Text 
@@ -63,6 +65,8 @@ data LoginResponse = LoginResponse
 
 instance ToJSON LoginResponse where
   toJSON (LoginResponse token) = object [ "token" .= token ]
+
+
 
 data CreateInvitationRequest = CreateInvitationRequest
   { restaurantId :: RestaurantId
@@ -75,12 +79,16 @@ instance FromJSON CreateInvitationRequest where
                          v .: "time"
   parseJSON _ = mzero
 
+
+
 data CreateInvitationResponse = CreateInvitationResponse
   { invitationId :: InvitationId
   } deriving (Show, Eq)
 
 instance ToJSON CreateInvitationResponse where
   toJSON (CreateInvitationResponse inviteId) = object [ "invitationId" .= inviteId ]
+
+
 
 data GetInvitationsRequest = GetInvitationsRequest
   { offset :: Maybe Int
@@ -95,8 +103,9 @@ instance FromParams GetInvitationsRequest where
 
     where textToInt t = let eitherPair = decimal t
                             maybePair = eitherToMaybe eitherPair
-                            i = fst <$> maybePair
-                        in i
+                        in fst <$> maybePair
+
+
 
 newtype InvitationWithId = InvitationWithId (DB.Entity Invitation)
 
@@ -108,10 +117,10 @@ data GetInvitationsResponse = GetInvitationsResponse
   , nextOffset :: Maybe Int
   } 
 
+
+
 instance ToJSON GetInvitationsResponse where
   toJSON (GetInvitationsResponse invitations offset) = object ["invitations" .= invitations, "nextOffset" .= offset]
-
-
 
 data AuthorizationToken = AuthorizationToken 
   { userId :: UserId 
